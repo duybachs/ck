@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .stock-item { transition: background-color 0.2s; position: relative; }
+        .stock-item.dragging { opacity: 0.5; background-color: #e5e7eb; }
+        .stock-item:hover { background-color: #f3f4f6; }
+        .chart-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; width: 100%; }
+        .sector-container { display: flex; flex-wrap: wrap; gap: 1rem; }
+        .sector-list { flex: 1 1 250px; min-width: 250px; }
+        .tooltip { 
+            visibility: hidden; 
+            position: absolute; 
+            background-color: #e0f7fa; 
+            color: black; 
+            padding: 8px 12px; 
+            border-radius: 4px; 
+            z-index: 10; 
+            font-size: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            white-space: normal;
+            word-wrap: break-word;
+            max-width: 3000px;
+            min-width: 700px;
+            font-family: 'Roboto', Arial, sans-serif;
+        }
+        .tooltip ul { margin: 0; padding-left: 20px; }
+        .stock-item:hover .tooltip { visibility: visible; }
+        .tooltip-editor {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 20px 10px 10px 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
+            width: 900px;
+            min-height: 500px;
+            max-width: 3000px;
+            min-width: 700px;
+            max-height: 2000px;
+            min-height: 700px;
+            display: flex;
+            flex-direction: column;
+        }
+        .tooltip-editor-header {
+            background: #f0f0f0;
+            padding: 5px 10px;
+            border-bottom: 1px solid #ddd;
+            cursor: move;
+            font-size: 14px;
+            font-weight: bold;
+            user-select: none;
+            text-align: center;
+        }
+        .tooltip-editor-content {
+            border: 1px solid #ddd;
+            padding: 5px;
+            min-height: 100px;
+            max-height: 400px;
+            outline: none;
+            font-size: 14px;
+            white-space: pre-wrap;
+            font-family: 'Roboto', Arial, sans-serif;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+        .tooltip-editor-content ul { margin: 0; padding-left: 20px; }
+        .tooltip-editor-url {
+            width: 100%;
+            border: 1px solid #ddd;
+            padding: 5px;
+            margin-top: 10px;
+            font-size: 14px;
+            outline: none;
+            border-radius: 4px;
+        }
+        .tooltip-editor-buttons {
+            margin-top: 10px;
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        .tooltip-editor-delete {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+        }
+        .bullet-selector, .color-selector {
+            position: absolute;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 5px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1001;
+            display: none;
+        }
+        .bullet-selector button, .color-selector button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 5px;
+            border: none;
+            background: none;
+            cursor: pointer;
+        }
+        .bullet-selector button:hover, .color-selector button:hover {
+            background-color: #f0f0f0;
+        }
+        .context-menu {
+            position: absolute;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1002;
+            width: 200px;
+        }
+        .context-menu label {
+            display: flex;
+            align-items: center;
+            padding: 4px 0;
+            font-size: 14px;
+        }
+        .context-menu input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        .context-menu div {
+            display: flex;
+            align-items: center;
+            padding: 4px 0;
+            cursor: pointer;
+        }
+        .context-menu div:hover {
+            background-color: #f0f0f0;
+        }
+        .dot-symbol {
+            display: inline-block;
+            margin-right: 5px;
+            vertical-align: middle;
+            font-size: 24px;
+            position: relative;
+        }
+        .symbol-tooltip {
+            visibility: hidden;
+            position: absolute;
+            background-color: #333;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            z-index: 20;
+            font-size: 12px;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+        }
+        .dot-symbol:hover .symbol-tooltip {
+            visibility: visible;
+        }
+        .edit-time-bar {
+            height: 4px;
+            border-radius: 2px;
+            margin-top: 4px;
+            width: 0;
+        }
+        .url-button {
+            margin-left: 4px;
+            padding: 2px 6px;
+            font-size: 12px;
+            line-height: 1;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .url-button:hover {
+            background-color: #2563eb;
+        }
+        .color-description {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 10px;
+        }
+        .color-description span[contenteditable] {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 2px 4px;
+            min-width: 100px;
+            outline: none;
+        }
+        .color-description span[contenteditable]:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 1px #2563eb;
+        }
+        .modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
+            width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            background: #f0f0f0;
+            padding: 5px 10px;
+            border-bottom: 1px solid #ddd;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .modal-content {
+            padding: 10px;
+        }
+        .modal-content label {
+            display: flex;
+            align-items: center;
+            padding: 4px 0;
+            font-size: 14px;
+        }
+        .modal-content input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        .symbol-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+        .add-symbol-container {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+            align-items: center;
+        }
+        .add-symbol-input {
+            flex: 1;
+            border: 1px solid #ddd;
+            padding: 5px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .external-link {
+            background-color: #3b82f6;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .external-link:hover {
+            background-color: #2563eb;
+        }
+        @media (max-width: 1024px) { .chart-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 640px) { .chart-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="w-full min-h-screen flex flex-col p-4">
+        <h1 class="text-2xl font-bold text-gray-800 mb-4">Stock Dashboard</h1>
+        
+        <!-- Controls -->
+        <div class="bg-white p-4 rounded-lg shadow mb-6">
+            <div class="flex flex-wrap gap-4 items-center">
+                <button onclick="saveToFile()" class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm">Save Data</button>
+                <label class="flex items-center">
+                    <input type="file" id="loadFileInput" accept=".json" onchange="loadFromFile(event)" class="hidden">
+                    <span onclick="document.getElementById('loadFileInput').click()" class="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 text-sm cursor-pointer">Load Data</span>
+                </label>
+                <button onclick="editRightClickMenu()" class="bg-purple-500 text-white px-3 py-1 rounded hover:bg-purple-600 text-sm">Edit Right-Click Menu</button>
+                <button onclick="window.open('comm.html', '_blank')" class="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 text-sm">Commodities</button>
+                <button onclick="window.open('strat.html', '_blank')" class="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 text-sm">Chiến lược</button>
+                <div id="colorDescriptions" class="flex flex-wrap gap-2"></div>
+            </div>
+        </div>
+
+        <!-- Stock Lists by Sector -->
+        <div class="bg-white p-4 rounded-lg shadow mb-6">
+            <h2 class="text-lg font-semibold text-gray-700 mb-2">Stock Lists by Sector</h2>
+            <div id="sectorContainer" class="sector-container"></div>
+        </div>
+
+        <!-- Chart Container -->
+        <div id="chartContainer" class="chart-grid flex-1"></div>
+    </div>
+
+    <script>
+        // Utility to generate unique IDs
+        function generateId() {
+            return 'id_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        const defaultStocksBySector = {
+            'Banking': ['VNINDEX', 'VCB'],
+            'Education': []
+        };
+
+        let sectorOrder = JSON.parse(localStorage.getItem('sectorOrder')) || Object.keys(defaultStocksBySector);
+
+        let dotSymbols = JSON.parse(localStorage.getItem('dotSymbols')) || [
+            { id: generateId(), symbol: '•', name: 'Dot' },
+            { id: generateId(), symbol: '★', name: 'Star' },
+            { id: generateId(), symbol: '✔', name: 'Check' }
+        ];
+
+        let stocksBySector = JSON.parse(localStorage.getItem('stocksBySector')) || defaultStocksBySector;
+        let stockTooltips = JSON.parse(localStorage.getItem('stockTooltips')) || {};
+        let stockSymbols = JSON.parse(localStorage.getItem('stockSymbols')) || {};
+        let stockTooltipTimestamps = JSON.parse(localStorage.getItem('stockTooltipTimestamps')) || {};
+        let stockUrls = JSON.parse(localStorage.getItem('stockUrls')) || {};
+        let sectorColors = JSON.parse(localStorage.getItem('sectorColors')) || {};
+        let colorDescriptions = JSON.parse(localStorage.getItem('colorDescriptions')) || {
+            [dotSymbols[0].id]: 'Quan trọng',
+            [dotSymbols[1].id]: 'Tích cực',
+            [dotSymbols[2].id]: 'Tiêu cực'
+        };
+        let selectedSymbols = JSON.parse(localStorage.getItem('selectedSymbols')) || dotSymbols.map(s => s.id);
+
+        const sectorBackgroundColors = [
+            { color: '#f5f5f5', name: 'Light Gray' },
+            { color: '#e6f3ff', name: 'Light Blue' },
+            { color: '#e6ffe6', name: 'Light Green' },
+            { color: '#fff5e6', name: 'Light Orange' },
+            { color: '#ffe6e6', name: 'Light Red' },
+            { color: '#f5e6ff', name: 'Light Purple' },
+            { color: 'transparent', name: 'None' }
+        ];
+
+        function saveStockList() {
+            localStorage.setItem('stocksBySector', JSON.stringify(stocksBySector));
+            localStorage.setItem('sectorOrder', JSON.stringify(sectorOrder));
+            localStorage.setItem('stockTooltips', JSON.stringify(stockTooltips));
+            localStorage.setItem('stockSymbols', JSON.stringify(stockSymbols));
+            localStorage.setItem('stockTooltipTimestamps', JSON.stringify(stockTooltipTimestamps));
+            localStorage.setItem('stockUrls', JSON.stringify(stockUrls));
+            localStorage.setItem('sectorColors', JSON.stringify(sectorColors));
+            localStorage.setItem('colorDescriptions', JSON.stringify(colorDescriptions));
+            localStorage.setItem('selectedSymbols', JSON.stringify(selectedSymbols));
+            localStorage.setItem('dotSymbols', JSON.stringify(dotSymbols));
+        }
+
+        function saveToFile() {
+            const data = {
+                sectorOrder, stocksBySector, stockTooltips, stockSymbols,
+                stockTooltipTimestamps, stockUrls, sectorColors, colorDescriptions,
+                selectedSymbols, dotSymbols
+            };
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'stock_dashboard_data.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function loadFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (data.sectorOrder && data.stocksBySector) {
+                        sectorOrder = data.sectorOrder;
+                        stocksBySector = data.stocksBySector;
+                        stockTooltips = data.stockTooltips || {};
+                        stockSymbols = data.stockSymbols || {};
+                        stockTooltipTimestamps = data.stockTooltipTimestamps || {};
+                        stockUrls = data.stockUrls || {};
+                        sectorColors = data.sectorColors || {};
+                        colorDescriptions = data.colorDescriptions || colorDescriptions;
+                        selectedSymbols = data.selectedSymbols || dotSymbols.map(s => s.id);
+                        dotSymbols = data.dotSymbols || dotSymbols;
+                        saveStockList();
+                        renderStockLists();
+                        renderColorDescriptions();
+                    } else {
+                        alert('Invalid file format. Please upload a valid JSON file.');
+                    }
+                } catch (error) {
+                    alert('Error reading file: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function closeModal(modal) {
+            saveStockList();
+            modal.remove();
+        }
+
+        function editRightClickMenu() {
+            const existingModal = document.querySelector('.modal');
+            if (existingModal) existingModal.remove();
+
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-header">Chỉnh sửa Menu Chuột Phải</div>
+                <div class="modal-content">
+                    ${dotSymbols.map((symbol, index) => `
+                        <div class="symbol-item">
+                            <label>
+                                <input type="checkbox" 
+                                       ${selectedSymbols.includes(symbol.id) ? 'checked' : ''} 
+                                       onchange="toggleSelectedSymbol('${symbol.id}')">
+                                <span class="dot-symbol">${symbol.symbol}</span> 
+                                ${colorDescriptions[symbol.id] || symbol.name}
+                            </label>
+                            <button onclick="deleteSymbol(${index})" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 text-sm" ${dotSymbols.length <= 1 ? 'disabled' : ''}>Xóa</button>
+                        </div>
+                    `).join('')}
+                    <div class="add-symbol-container">
+                        <input type="text" class="add-symbol-input" placeholder="Dán biểu tượng mới (e.g., 🥇)" id="newSymbolInput">
+                        <button onclick="addNewSymbol()" class="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 text-sm">Thêm</button>
+                        <a href="https://symbl.cc/en/emoji/objects/" target="_blank" class="external-link">Icon Library</a>
+                    </div>
+                </div>
+                <div class="mt-4 flex justify-end gap-2">
+                    <button onclick="closeModal(this.closest('.modal'))" class="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 text-sm">Đóng</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function toggleSelectedSymbol(id) {
+            const index = selectedSymbols.indexOf(id);
+            if (index === -1) {
+                selectedSymbols.push(id);
+            } else {
+                selectedSymbols.splice(index, 1);
+            }
+            saveStockList();
+        }
+
+        function deleteSymbol(index) {
+            if (dotSymbols.length <= 1) {
+                alert('Phải có ít nhất một biểu tượng!');
+                return;
+            }
+            const symbol = dotSymbols[index];
+            if (!confirm(`Bạn có chắc chắn muốn xóa biểu tượng "${colorDescriptions[symbol.id] || symbol.name}" không?`)) {
+                return;
+            }
+            dotSymbols.splice(index, 1);
+            const idIndex = selectedSymbols.indexOf(symbol.id);
+            if (idIndex !== -1) selectedSymbols.splice(idIndex, 1);
+            delete colorDescriptions[symbol.id];
+            for (let stock in stockSymbols) {
+                const idx = stockSymbols[stock].indexOf(symbol.id);
+                if (idx !== -1) stockSymbols[stock].splice(idx, 1);
+                if (stockSymbols[stock].length === 0) delete stockSymbols[stock];
+            }
+            saveStockList();
+            editRightClickMenu();
+            renderStockLists();
+            renderColorDescriptions();
+        }
+
+        function addNewSymbol() {
+            const input = document.getElementById('newSymbolInput');
+            const newSymbol = input.value.trim();
+            if (!newSymbol) {
+                alert('Vui lòng nhập một biểu tượng!');
+                return;
+            }
+            const newId = generateId();
+            const newName = `Custom Symbol ${dotSymbols.length + 1}`;
+            dotSymbols.push({ id: newId, symbol: newSymbol, name: newName });
+            selectedSymbols.push(newId);
+            colorDescriptions[newId] = newName;
+            saveStockList();
+            input.value = '';
+            editRightClickMenu();
+            renderColorDescriptions();
+        }
+
+        function showContextMenu(e, stock) {
+            e.preventDefault();
+            const existingMenu = document.querySelector('.context-menu');
+            if (existingMenu) existingMenu.remove();
+
+            const menu = document.createElement('div');
+            menu.className = 'context-menu';
+            menu.style.top = `${e.pageY}px`;
+            menu.style.left = `${e.pageX}px`;
+
+            const symbolsToShow = selectedSymbols.length > 0 
+                ? dotSymbols.filter(symbol => selectedSymbols.includes(symbol.id))
+                : dotSymbols;
+
+            const currentSymbols = stockSymbols[stock] || [];
+            menu.innerHTML = symbolsToShow.map(symbol => `
+                <label>
+                    <input type="checkbox" 
+                           ${currentSymbols.includes(symbol.id) ? 'checked' : ''} 
+                           onchange="toggleSymbol('${stock}', '${symbol.id}')">
+                    <span class="dot-symbol">${symbol.symbol}</span> 
+                    ${colorDescriptions[symbol.id] || symbol.name}
+                </label>
+            `).join('');
+
+            document.body.appendChild(menu);
+            const closeMenu = (event) => {
+                if (!menu.contains(event.target)) {
+                    menu.remove();
+                    document.removeEventListener('click', closeMenu);
+                }
+            };
+            setTimeout(() => document.addEventListener('click', closeMenu), 0);
+        }
+
+        function renderColorDescriptions() {
+            const container = document.getElementById('colorDescriptions');
+            container.innerHTML = '';
+            dotSymbols.forEach(symbol => {
+                const div = document.createElement('div');
+                div.className = 'color-description';
+                div.innerHTML = `
+                    <span class="dot-symbol">${symbol.symbol}</span>
+                    <span contenteditable="true" onblur="updateColorDescription('${symbol.id}', this.textContent)">${colorDescriptions[symbol.id] || symbol.name}</span>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function updateColorDescription(id, description) {
+            colorDescriptions[id] = description.trim() || dotSymbols.find(s => s.id === id).name;
+            saveStockList();
+        }
+
+        function getAllStocks() {
+            return sectorOrder.flatMap(sector => 
+                sector === 'Banking' ? (stocksBySector[sector] || []) : [sector, ...(stocksBySector[sector] || [])]
+            );
+        }
+
+        function adjustTooltipPosition(tooltip, stockItem) {
+            const rect = stockItem.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const margin = 10;
+
+            tooltip.style.left = 'auto';
+            tooltip.style.right = 'auto';
+            tooltip.style.top = 'auto';
+            tooltip.style.bottom = 'auto';
+            tooltip.style.transform = 'none';
+
+            let left = rect.right + margin;
+            let right = 'auto';
+            let top = rect.top;
+            let bottom = 'auto';
+
+            if (left + tooltipRect.width > viewportWidth - margin) {
+                left = 'auto';
+                right = viewportWidth - rect.left + margin;
+            }
+
+            if (top + tooltipRect.height > viewportHeight - margin) {
+                top = viewportHeight - tooltipRect.height - margin;
+            }
+            if (top < margin) {
+                top = margin;
+            }
+
+            tooltip.style.left = left !== 'auto' ? `${left - rect.left}px` : 'auto';
+            tooltip.style.right = right !== 'auto' ? `${right - (viewportWidth - rect.right)}px` : 'auto';
+            tooltip.style.top = `${top - rect.top}px`;
+        }
+
+        function calculateBarWidth(timestamp) {
+            if (!timestamp) return 0;
+            const now = Date.now();
+            const daysSinceEdit = (now - timestamp) / (1000 * 60 * 60 * 24);
+            if (daysSinceEdit >= 30) return 0;
+            const maxWidth = 100;
+            return maxWidth * (1 - daysSinceEdit / 30);
+        }
+
+        function getBarColor(timestamp) {
+            if (!timestamp) return '#000000';
+            const now = Date.now();
+            const daysSinceEdit = (now - timestamp) / (1000 * 60 * 60 * 24);
+            if (daysSinceEdit <= 5) return '#d1fae5';
+            if (daysSinceEdit < 14) return '#11d5db';
+            return '#000000';
+        }
+
+        async function renderStockLists() {
+            const container = document.getElementById('sectorContainer');
+            container.innerHTML = '';
+            sectorOrder.forEach(sector => {
+                const stocks = stocksBySector[sector] || [];
+                const sectorDiv = document.createElement('div');
+                sectorDiv.className = 'sector-list p-3 rounded border border-gray-200';
+                sectorDiv.dataset.sector = sector;
+                sectorDiv.style.backgroundColor = sectorColors[sector] || 'transparent';
+                sectorDiv.addEventListener('contextmenu', (e) => showSectorContextMenu(e, sector));
+
+                sectorDiv.innerHTML = `
+                    <div class="sector-title flex items-center">
+                        <h3 class="text-blue-600 font-semibold mb-2 cursor-pointer flex-1" onclick="editSectorName('${sector}')">${sector}</h3>
+                        <input type="text" class="sector-input hidden border rounded px-2 py-1 w-full mb-2 focus:outline-none focus:ring focus:border-blue-300" value="${sector}" onblur="saveSectorName('${sector}', this.value)" onkeydown="if(event.key === 'Enter') saveSectorName('${sector}', this.value)">
+                    </div>
+                    <div class="stock-list space-y-2" data-sector="${sector}"></div>
+                    <div class="flex gap-2 mt-2">
+                        <button onclick="addStock('${sector}')" class="bg-gray-200 text-white px-3 py-1 rounded hover:bg-green-600 text-sm">Add Stock</button>
+                        <button onclick="showSectorCharts('${sector}')" class="bg-gray-200 text-white px-3 py-1 rounded hover:bg-purple-600 text-sm">Show Charts</button>
+                    </div>
+                `;
+                const stockList = sectorDiv.querySelector('.stock-list');
+                stocks.forEach((item, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'stock-item flex flex-col p-2 rounded border border-gray-200';
+                    div.draggable = true;
+                    div.dataset.sector = sector;
+                    div.dataset.index = index;
+                    div.dataset.stock = item;
+                    div.addEventListener('dragstart', handleStockDragStart);
+                    div.addEventListener('dragover', handleStockDragOver);
+                    div.addEventListener('drop', handleStockDrop);
+                    div.addEventListener('dragend', handleStockDragEnd);
+                    div.addEventListener('dblclick', () => editTooltip(item, div));
+                    div.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        showContextMenu(e, item);
+                    });
+                    div.addEventListener('mouseenter', () => {
+                        const tooltip = div.querySelector('.tooltip');
+                        adjustTooltipPosition(tooltip, div);
+                        tooltip.style.visibility = 'visible';
+                    });
+                    div.addEventListener('mouseleave', () => {
+                        div.querySelector('.tooltip').style.visibility = 'hidden';
+                    });
+
+                    const tooltipHtml = stockTooltips[item] || 'Không có ghi chú';
+                    const symbolsHtml = (stockSymbols[item] || []).map(id => {
+                        const symbolObj = dotSymbols.find(s => s.id === id);
+                        const label = symbolObj ? (colorDescriptions[symbolObj.id] || symbolObj.name) : '';
+                        return `<span class="dot-symbol">${symbolObj ? symbolObj.symbol : ''}<span class="symbol-tooltip">${label}</span></span>`;
+                    }).join('');
+                    const hasSymbols = stockSymbols[item] && stockSymbols[item].length > 0;
+                    const barWidth = hasSymbols ? calculateBarWidth(stockTooltipTimestamps[item]) : 0;
+                    const barColor = getBarColor(stockTooltipTimestamps[item]);
+                    const hasUrl = stockUrls[item] && stockUrls[item].trim() !== '';
+                    div.innerHTML = `
+                        <div class="flex items-center">
+                            <input type="text" value="${item}" onchange="updateStock('${sector}', ${index}, this.value)" class="border rounded px-2 py-1 w-[3.6rem] mr-2 focus:outline-none focus:ring focus:border-blue-300">
+                            ${hasUrl ? `<button class="url-button" onclick="window.open('${stockUrls[item]}', '_blank')">🔗</button>` : ''}
+                            <span class="symbols">${symbolsHtml}</span>
+                            <div class="tooltip">${tooltipHtml}</div>
+                        </div>
+                        ${hasSymbols ? `<div class="edit-time-bar" style="width: ${barWidth}px; background-color: ${barColor};"></div>` : ''}
+                    `;
+                    stockList.appendChild(div);
+                });
+                container.appendChild(sectorDiv);
+            });
+            saveStockList();
+        }
+
+        function showSectorContextMenu(e, sector) {
+            e.preventDefault();
+            const existingMenu = document.querySelector('.context-menu');
+            if (existingMenu) existingMenu.remove();
+
+            const menu = document.createElement('div');
+            menu.className = 'context-menu';
+            menu.style.top = `${e.pageY}px`;
+            menu.style.left = `${e.pageX}px`;
+
+            menu.innerHTML = sectorBackgroundColors.map(bgColor => `
+                <div onclick="setSectorBackgroundColor('${sector}', '${bgColor.color}')">
+                    <span class="dot-symbol" style="background-color: ${bgColor.color}"></span> ${bgColor.name}
+                </div>
+            `).join('');
+
+            document.body.appendChild(menu);
+            const closeMenu = (event) => {
+                if (!menu.contains(event.target)) {
+                    menu.remove();
+                    document.removeEventListener('click', closeMenu);
+                }
+            };
+            setTimeout(() => document.addEventListener('click', closeMenu), 0);
+        }
+
+        function setSectorBackgroundColor(sector, color) {
+            sectorColors[sector] = color;
+            saveStockList();
+            renderStockLists();
+        }
+
+        function toggleSymbol(stock, id) {
+            if (!stockSymbols[stock]) stockSymbols[stock] = [];
+            const index = stockSymbols[stock].indexOf(id);
+            if (index === -1) {
+                stockSymbols[stock].push(id);
+            } else {
+                stockSymbols[stock].splice(index, 1);
+            }
+            if (stockSymbols[stock].length === 0) delete stockSymbols[stock];
+            saveStockList();
+            renderStockLists();
+        }
+
+        function handleStockDragStart(e) {
+            e.target.classList.add('dragging');
+            e.dataTransfer.setData('text/plain', JSON.stringify({
+                sector: e.target.dataset.sector,
+                index: parseInt(e.target.dataset.index),
+                stock: e.target.dataset.stock
+            }));
+        }
+
+        function handleStockDragOver(e) {
+            e.preventDefault();
+        }
+
+        function handleStockDrop(e) {
+            e.preventDefault();
+            const { sector: fromSector, index: fromIndex, stock } = JSON.parse(e.dataTransfer.getData('text/plain'));
+            const toElement = e.target.closest('.stock-item') || e.target.closest('.stock-list');
+            const toSector = toElement.dataset.sector;
+
+            if (!stocksBySector[toSector]) stocksBySector[toSector] = [];
+
+            if (toElement.classList.contains('stock-list')) {
+                if (fromSector === toSector) {
+                    const [item] = stocksBySector[fromSector].splice(fromIndex, 1);
+                    stocksBySector[toSector].push(item);
+                } else {
+                    stocksBySector[fromSector].splice(fromIndex, 1);
+                    stocksBySector[toSector].push(stock);
+                }
+            } else {
+                let toIndex = parseInt(toElement.dataset.index);
+                if (fromSector === toSector) {
+                    if (fromIndex === toIndex) return;
+                    const [item] = stocksBySector[fromSector].splice(fromIndex, 1);
+                    if (toIndex > fromIndex) toIndex--;
+                    stocksBySector[toSector].splice(toIndex, 0, item);
+                } else {
+                    stocksBySector[fromSector].splice(fromIndex, 1);
+                    stocksBySector[toSector].splice(toIndex, 0, stock);
+                }
+            }
+
+            renderStockLists();
+        }
+
+        function handleStockDragEnd(e) {
+            e.target.classList.remove('dragging');
+        }
+
+        function editSectorName(sector) {
+            const sectorDiv = document.querySelector(`.sector-list[data-sector="${sector}"]`);
+            const title = sectorDiv.querySelector('.sector-title h3');
+            const input = sectorDiv.querySelector('.sector-title input');
+            title.classList.add('hidden');
+            input.classList.remove('hidden');
+            input.focus();
+        }
+
+        function saveSectorName(oldName, newName) {
+            newName = newName.trim();
+            if (newName === '' || sectorOrder.includes(newName) || newName === oldName) {
+                const sectorDiv = document.querySelector(`.sector-list[data-sector="${oldName}"]`);
+                const title = sectorDiv.querySelector('.sector-title h3');
+                const input = sectorDiv.querySelector('.sector-title input');
+                input.classList.add('hidden');
+                title.classList.remove('hidden');
+                return;
+            }
+
+            const stocks = stocksBySector[oldName] || [];
+            delete stocksBySector[oldName];
+            stocksBySector[newName] = stocks;
+            const index = sectorOrder.indexOf(oldName);
+            sectorOrder[index] = newName;
+
+            if (sectorColors[oldName]) {
+                sectorColors[newName] = sectorColors[oldName];
+                delete sectorColors[oldName];
+            }
+
+            const sectorDiv = document.querySelector(`.sector-list[data-sector="${oldName}"]`);
+            sectorDiv.dataset.sector = newName;
+            sectorDiv.querySelector('.sector-title h3').textContent = newName;
+            sectorDiv.querySelector('.sector-title input').value = newName;
+            sectorDiv.querySelector('.sector-title input').classList.add('hidden');
+            sectorDiv.querySelector('.sector-title h3').classList.remove('hidden');
+            sectorDiv.querySelector('.stock-list').dataset.sector = newName;
+            sectorDiv.querySelectorAll('.stock-item').forEach(item => {
+                item.dataset.sector = newName;
+                item.querySelector('input').setAttribute('onchange', `updateStock('${newName}', ${item.dataset.index}, this.value)`);
+            });
+            sectorDiv.querySelector('button[onclick*="addStock"]').setAttribute('onclick', `addStock('${newName}')`);
+            sectorDiv.querySelector('button[onclick*="showSectorCharts"]').setAttribute('onclick', `showSectorCharts('${newName}')`);
+
+            saveStockList();
+        }
+
+        function updateStock(sector, index, newValue) {
+            if (newValue.trim() === '') return;
+            const oldStock = stocksBySector[sector][index];
+            const newStock = newValue.trim();
+            if (oldStock !== newStock) {
+                stockTooltips[newStock] = stockTooltips[oldStock] || 'Không có ghi chú';
+                stockSymbols[newStock] = stockSymbols[oldStock] || [];
+                stockTooltipTimestamps[newStock] = stockTooltipTimestamps[oldStock] || null;
+                stockUrls[newStock] = stockUrls[oldStock] || '';
+                delete stockTooltips[oldStock];
+                delete stockSymbols[oldStock];
+                delete stockTooltipTimestamps[oldStock];
+                delete stockUrls[oldStock];
+            }
+            stocksBySector[sector][index] = newStock;
+            renderStockLists();
+        }
+
+        function removeStock(sector, index) {
+            if (confirm('Bạn có chắc chắn muốn xóa mã cổ phiếu này không?') && stocksBySector[sector]) {
+                const stock = stocksBySector[sector][index];
+                delete stockTooltips[stock];
+                delete stockSymbols[stock];
+                delete stockTooltipTimestamps[stock];
+                delete stockUrls[stock];
+                stocksBySector[sector].splice(index, 1);
+                renderStockLists();
+                const editor = document.querySelector('.tooltip-editor');
+                if (editor) editor.remove();
+            }
+        }
+
+        function addStock(sector) {
+            const newStock = prompt(`Nhập mã cổ phiếu mới cho ${sector}:`);
+            if (newStock && newStock.trim() !== '' && !Object.values(stocksBySector).flat().includes(newStock.trim())) {
+                if (!stocksBySector[sector]) stocksBySector[sector] = [];
+                const stock = newStock.trim();
+                stocksBySector[sector].push(stock);
+                stockTooltips[stock] = 'Không có ghi chú';
+                stockTooltipTimestamps[stock] = null;
+                stockUrls[stock] = '';
+                renderStockLists();
+            }
+        }
+
+        function enableDragging(editor) {
+            const header = editor.querySelector('.tooltip-editor-header');
+            let isDragging = false;
+            let currentX;
+            let currentY;
+            let initialX;
+            let initialY;
+
+            header.addEventListener('mousedown', startDragging);
+
+            function startDragging(e) {
+                initialX = e.clientX - currentX;
+                initialY = e.clientY - currentY;
+                isDragging = true;
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('mouseup', stopDragging);
+            }
+
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+
+                    const editorRect = editor.getBoundingClientRect();
+                    const viewportWidth = window.innerWidth;
+                    const viewportHeight = window.innerHeight;
+                    const margin = 10;
+
+                    currentX = Math.max(margin, Math.min(currentX, viewportWidth - editorRect.width - margin));
+                    currentY = Math.max(margin, Math.min(currentY, viewportHeight - editorRect.height - margin));
+
+                    editor.style.left = `${currentX}px`;
+                    editor.style.top = `${currentY}px`;
+                    editor.style.transform = 'none';
+                }
+            }
+
+            function stopDragging() {
+                isDragging = false;
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('mouseup', stopDragging);
+            }
+
+            currentX = (window.innerWidth - editor.offsetWidth) / 2;
+            currentY = (window.innerHeight - editor.offsetHeight) / 2;
+        }
+
+        function editTooltip(stock, stockItem) {
+            const existingEditor = document.querySelector('.tooltip-editor');
+            if (existingEditor) existingEditor.remove();
+
+            const editor = document.createElement('div');
+            editor.className = 'tooltip-editor';
+            const currentTooltip = stockTooltips[stock] || 'Không có ghi chú';
+            const currentUrl = stockUrls[stock] || '';
+            
+            editor.innerHTML = `
+                <div class="tooltip-editor-header">Sửa Ghi Chú</div>
+                <div class="tooltip-editor-delete">
+                    <button onclick="removeStock('${stockItem.dataset.sector}', ${stockItem.dataset.index})" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 text-sm">Xóa</button>
+                </div>
+                <div class="tooltip-editor-content" contenteditable="true">${currentTooltip}</div>
+                <input type="text" class="tooltip-editor-url" value="${currentUrl}" placeholder="Paste URL here">
+                <div class="tooltip-editor-buttons">
+                    <button onclick="applyFormatting(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), 'bold')" class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-sm">In đậm</button>
+                    <button onclick="applyFormatting(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), 'italic')" class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-sm">In nghiêng</button>
+                    <button onclick="applyFormatting(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), 'underline')" class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-sm">Gạch chân</button>
+                    <button onclick="removeFormatting(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'))" class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-sm">Xóa định dạng</button>
+                    <button onclick="toggleBulletSelector(this)" class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-sm">Dấu đầu dòng</button>
+                    <button onclick="toggleColorSelector(this)" class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-sm">Màu chữ</button>
+                    <div class="bullet-selector">
+                        <button onclick="applyBullet(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '• ')">• Điểm</button>
+                        <button onclick="applyBullet(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '➤ ', '#ff4500')" style="color: #ff4500;">➤ Mũi tên</button>
+                        <button onclick="applyBullet(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '★ ', '#ffd700')" style="color: #ffd700;">★ Ngôi sao</button>
+                        <button onclick="applyBullet(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '✔ ')" style="color: #008000;">✔ Đánh dấu</button>
+                        <button onclick="applyBullet(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '➢ ')" style="color: #0000ff;">➢ Con trỏ</button>
+                        <button onclick="applyBullet(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '⚫ ')">⚫ Vòng tròn</button>
+                        <button onclick="applyBullet(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '🔴 ')" style="color: #ff0000;">🔴 Điểm đỏ</button>
+                        <button onclick="applyBullet(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '🟢 ')" style="color: #00ff00;">🟢 Điểm xanh</button>
+                        <button onclick="applyBullet(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '🔵 ')" style="color: #0000ff;">🔵 Điểm xanh dương</button>
+                        <button onclick="applyBullet(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '▶ ')" style="color: #800080;">▶ Tam giác</button>
+                    </div>
+                    <div class="color-selector">
+                        ${dotSymbols.map(symbol => `
+                            <button onclick="applyTextColor(this.closest('.tooltip-editor').querySelector('.tooltip-editor-content'), '${symbol.id}')" style="color: #000000;">${colorDescriptions[symbol.id] || symbol.name}</button>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="tooltip-editor-buttons">
+                    <button onclick="saveTooltip('${stock}', this.closest('.tooltip-editor').querySelector('.tooltip-editor-content').innerHTML, this.closest('.tooltip-editor').querySelector('.tooltip-editor-url').value)" class="bg-green-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-sm">Lưu</button>
+                    <button onclick="this.closest('.tooltip-editor').remove()" class="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 text-sm">Hủy</button>
+                </div>
+            `;
+            document.body.appendChild(editor);
+            enableDragging(editor);
+            editor.querySelector('.tooltip-editor-content').focus();
+        }
+
+        function toggleBulletSelector(button) {
+            const selector = button.closest('.tooltip-editor').querySelector('.bullet-selector');
+            selector.style.display = selector.style.display === 'block' ? 'none' : 'block';
+            selector.style.top = `${button.offsetTop + button.offsetHeight}px`;
+            selector.style.left = `${button.offsetLeft}px`;
+        }
+
+        function toggleColorSelector(button) {
+            const selector = button.closest('.tooltip-editor').querySelector('.color-selector');
+            selector.style.display = selector.style.display === 'block' ? 'none' : 'block';
+            selector.style.top = `${button.offsetTop + button.offsetHeight}px`;
+            selector.style.left = `${button.offsetLeft}px`;
+        }
+
+        function applyFormatting(contentDiv, format) {
+            const selection = window.getSelection();
+            if (!selection.rangeCount || !contentDiv.contains(selection.anchorNode)) return;
+
+            const range = selection.getRangeAt(0);
+            if (range.collapsed) return;
+
+            const parentNode = range.commonAncestorContainer;
+            let isFormatted = false;
+            let formattedNode = null;
+
+            if (parentNode.nodeType === Node.TEXT_NODE) {
+                formattedNode = parentNode.parentElement;
+            } else if (parentNode.nodeType === Node.ELEMENT_NODE) {
+                formattedNode = parentNode;
+            }
+
+            if (format === 'bold' && formattedNode.tagName === 'STRONG') {
+                isFormatted = true;
+            } else if (format === 'italic' && formattedNode.tagName === 'EM') {
+                isFormatted = true;
+            } else if (format === 'underline' && formattedNode.tagName === 'U') {
+                isFormatted = true;
+            }
+
+            if (isFormatted) {
+                const textNode = document.createTextNode(range.toString());
+                range.deleteContents();
+                range.insertNode(textNode);
+            } else {
+                let newNode;
+                if (format === 'bold') {
+                    newNode = document.createElement('strong');
+                } else if (format === 'italic') {
+                    newNode = document.createElement('em');
+                } else if (format === 'underline') {
+                    newNode = document.createElement('u');
+                }
+                newNode.textContent = range.toString();
+                range.deleteContents();
+                range.insertNode(newNode);
+            }
+
+            selection.removeAllRanges();
+        }
+
+        function applyTextColor(contentDiv, id) {
+            const selection = window.getSelection();
+            if (!selection.rangeCount || !contentDiv.contains(selection.anchorNode)) return;
+
+            const range = selection.getRangeAt(0);
+            if (range.collapsed) return;
+
+            const parentNode = range.commonAncestorContainer;
+            let isColored = false;
+            let coloredNode = null;
+
+            if (parentNode.nodeType === Node.TEXT_NODE) {
+                coloredNode = parentNode.parentElement;
+            } else if (parentNode.nodeType === Node.ELEMENT_NODE) {
+                coloredNode = parentNode;
+            }
+
+            if (coloredNode.tagName === 'SPAN' && coloredNode.dataset.symbolId === id) {
+                isColored = true;
+            }
+
+            if (isColored) {
+                const textNode = document.createTextNode(range.toString());
+                range.deleteContents();
+                range.insertNode(textNode);
+            } else {
+                const span = document.createElement('span');
+                span.dataset.symbolId = id;
+                span.textContent = range.toString();
+                range.deleteContents();
+                range.insertNode(span);
+            }
+
+            selection.removeAllRanges();
+            const selector = contentDiv.closest('.tooltip-editor').querySelector('.color-selector');
+            selector.style.display = 'none';
+        }
+
+        function removeFormatting(contentDiv) {
+            const selection = window.getSelection();
+            if (!selection.rangeCount || !contentDiv.contains(selection.anchorNode)) return;
+
+            const range = selection.getRangeAt(0);
+            if (range.collapsed) return;
+
+            const fragment = document.createDocumentFragment();
+            const text = range.toString();
+            fragment.appendChild(document.createTextNode(text));
+
+            range.deleteContents();
+            range.insertNode(fragment);
+
+            selection.removeAllRanges();
+        }
+
+        function applyBullet(contentDiv, symbol, color = null) {
+            const selection = window.getSelection();
+            if (!selection.rangeCount || !contentDiv.contains(selection.anchorNode)) return;
+
+            const range = selection.getRangeAt(0);
+            const bulletSpan = document.createElement('span');
+            bulletSpan.style.color = color || 'inherit';
+            bulletSpan.textContent = symbol;
+
+            range.deleteContents();
+            range.insertNode(bulletSpan);
+
+            range.setStartAfter(bulletSpan);
+            range.setEndAfter(bulletSpan);
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            const selector = contentDiv.closest('.tooltip-editor').querySelector('.bullet-selector');
+            selector.style.display = 'none';
+        }
+
+        function saveTooltip(stock, htmlContent, url) {
+            stockTooltips[stock] = htmlContent.trim();
+            stockTooltipTimestamps[stock] = Date.now();
+            stockUrls[stock] = url.trim();
+            if (!stockUrls[stock]) delete stockUrls[stock];
+            saveStockList();
+            renderStockLists();
+            document.querySelector('.tooltip-editor').remove();
+        }
+
+        function showSectorCharts(sector) {
+            const chartContainer = document.getElementById('chartContainer');
+            chartContainer.innerHTML = '';
+            renderGraph('VNINDEX', 'D', `https://stockchart.vietstock.vn/?stockcode=VNINDEX&lang=vi&isIframe=1`, `frame-chart_VNINDEX`);
+            (stocksBySector[sector] || []).forEach(item => {
+                if (item.length === 3 || item === 'VNINDEX') {
+                    renderGraph(item, 'D', `https://stockchart.vietstock.vn/?stockcode=${item}&lang=vi&isIframe=1`, `frame-chart_${item}`);
+                }
+            });
+        }
+
+        function renderGraph(name, interval, src = `https://liveboard.cafef.vn/ptkt?symbol=${name}&interval=${interval}&theme=classic&target=tradingViewStockDetail&layout=0&autosave=1`, id = 'ifr' + name) {
+            const iframe = document.createElement('iframe');
+            iframe.id = id;
+            iframe.src = src;
+            iframe.className = 'w-full h-[450px] border border-gray-200 rounded';
+            iframe.dataset.stock = name;
+            document.getElementById('chartContainer').appendChild(iframe);
+        }
+
+        function reorderCharts() {
+            const chartContainer = document.getElementById('chartContainer');
+            const charts = Array.from(chartContainer.children).filter(el => el.tagName === 'IFRAME');
+            chartContainer.innerHTML = '';
+
+            getAllStocks().forEach(item => {
+                if (!sectorOrder.includes(item) && item.length !== 3 && item === 'VNINDEX') {
+                    const h = document.createElement('h1');
+                    h.className = 'text-xl text-blue-600 col-span-3';
+                    h.textContent = item;
+                    chartContainer.appendChild(h);
+                } else if (item.length === 3 || item === 'VNINDEX') {
+                    const chart = charts.find(c => c.dataset.stock === item);
+                    if (chart) {
+                        chartContainer.appendChild(chart);
+                    }
+                }
+            });
+        }
+
+        function clearCharts(prefix) {
+            getAllStocks().forEach(element => {
+                const iframe = document.getElementById(prefix + element);
+                if (iframe) iframe.parentNode.removeChild(iframe);
+            });
+        }
+
+        function closeSideTab() {}
+
+        function rsiFilter() {
+            const x = document.getElementById('ifrVNINDEX');
+        }
+
+        renderStockLists();
+        renderColorDescriptions();
+    </script>
+</body>
+</html>
