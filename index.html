@@ -7,15 +7,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .chart-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; width: 100%; }
-        .sector-container { display: flex; flex-wrap: wrap; gap: 1rem; }
-        .sector-list { flex: 1 1 60px; min-width: 20px; }
-        .stock-item { display: flex; align-items: center; padding: 0.5rem; }
-        .stock-item span { min-width: 3rem; }
         @media (max-width: 1024px) { .chart-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 640px) { 
             .chart-grid { grid-template-columns: 1fr; }
-            .sector-list { min-width: 100%; }
-            .stock-item span { font-size: 0.875rem; }
+            select { font-size: 0.875rem; }
         }
     </style>
 </head>
@@ -27,13 +22,10 @@
         <div class="bg-white p-4 rounded-lg shadow mb-6">
             <div class="flex flex-wrap gap-4 items-center">
                 <button onclick="window.open('comm.html', '_blank')" class="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 text-sm">Commodities</button>
+                <select id="sectorSelect" onchange="showSectorCharts(this.value)" class="border rounded px-2 py-1 text-sm focus:outline-none focus:ring focus:border-blue-300">
+                    <option value="">Chọn ngành</option>
+                </select>
             </div>
-        </div>
-
-        <!-- Stock Lists by Sector -->
-        <div class="bg-white p-4 rounded-lg shadow mb-6">
-            <h2 class="text-lg font-semibold text-gray-700 mb-2">Stock Lists by Sector</h2>
-            <div id="sectorContainer" class="sector-container"></div>
         </div>
 
         <!-- Chart Container -->
@@ -117,28 +109,15 @@
 
         let stocksBySector = defaultStocksBySector;
 
-        // Hiển thị danh sách cổ phiếu theo sector
-        function renderStockLists() {
-            const container = document.getElementById('sectorContainer');
-            container.innerHTML = '';
+        // Hiển thị danh sách sector trong menu thả xuống
+        function renderSectorSelect() {
+            const select = document.getElementById('sectorSelect');
+            select.innerHTML = '<option value="">Chọn ngành</option>'; // Reset menu
             Object.keys(stocksBySector).forEach(sector => {
-                const stocks = stocksBySector[sector] || [];
-                const sectorDiv = document.createElement('div');
-                sectorDiv.className = 'sector-list p-3 rounded border border-gray-200';
-                sectorDiv.innerHTML = `
-                    <h3 class="text-blue-600 font-semibold mb-2">${sector}</h3>
-                    <div class="stock-list space-y-1" data-sector="${sector}">
-                        ${stocks.map(item => `
-                            <div class="stock-item rounded border border-gray-200">
-                                <span class="inline-block">${item}</span>
-                            </div>
-                        `).join('')}
-                    </div>
-                    <div class="mt-2">
-                        <button onclick="showSectorCharts('${sector}')" class="bg-gray-200 text-gray-800 px-3 py-1 rounded hover:bg-purple-600 hover:text-white text-sm">Show Charts</button>
-                    </div>
-                `;
-                container.appendChild(sectorDiv);
+                const option = document.createElement('option');
+                option.value = sector;
+                option.textContent = sector;
+                select.appendChild(option);
             });
         }
 
@@ -146,6 +125,7 @@
         function showSectorCharts(sector) {
             const chartContainer = document.getElementById('chartContainer');
             chartContainer.innerHTML = '';
+            if (!sector) return;
             renderGraph('VNINDEX', 'D', `https://stockchart.vietstock.vn/?stockcode=VNINDEX&lang=vi&isIframe=1`, `frame-chart_VNINDEX`);
             (stocksBySector[sector] || []).forEach(item => {
                 if (item.length === 3 || item === 'VNINDEX') {
@@ -164,8 +144,8 @@
             document.getElementById('chartContainer').appendChild(iframe);
         }
 
-        // Khởi tạo danh sách cổ phiếu
-        renderStockLists();
+        // Khởi tạo menu thả xuống
+        renderSectorSelect();
     </script>
 </body>
 </html>
